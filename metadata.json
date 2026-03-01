@@ -1,0 +1,7 @@
+{
+  "name": "VoiceNav — Universal Web Automation Agent",
+  "description": "An intelligent web automation agent that observes your screen visually and performs actions through voice or text commands.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
