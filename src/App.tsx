@@ -33,9 +33,11 @@ import {
   VolumeX,
   Play,
   Globe,
-  AlertCircle
+  AlertCircle,
+  Link as LinkIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI, Type } from "@google/genai";
 
 // --- Types ---
 
@@ -71,51 +73,51 @@ interface GeminiResponse {
 // --- Constants ---
 
 const SYSTEM_PROMPT = `
-You are VoiceNav, an intelligent web automation agent.
-The user gives you a task or question. You must respond 
-ONLY with a valid JSON object in this exact format:
+You are VoiceNav, an elite AI web automation and research agent.
+Your goal is to provide the user with high-quality, accurate, and CURRENT data.
 
+CRITICAL: You MUST respond ONLY with a valid JSON object. Do not include any conversational text before or after the JSON.
+
+CRITICAL URL RULES:
+1. You MUST provide REAL, WORKING, EXTERNAL URLs that are CURRENTLY active.
+2. NEVER guess or hallucinate URLs. Use your Google Search tool to find the EXACT URLs for the products or information.
+3. If you provide a link to a product (e.g., on Amazon), it MUST be a direct link to that product's page that you found in your search results.
+4. If a direct product link is not available, provide the URL of the search results page on that site (e.g., Amazon search results for that product) instead of a broken or guessed direct link.
+5. "Page Not Found" errors are a CRITICAL FAILURE. Verify every link mentally against your search tool results.
+6. For products, prioritize links to major retailers (Amazon, eBay, Walmart, etc.) or official brand stores.
+
+JSON RESPONSE FORMAT:
 {
-  "agentThought": "Brief explanation of what you are doing",
+  "agentThought": "Detailed reasoning about the user's request and your search strategy. Explain how you verified the links.",
   "steps": [
-    { "type": "SCREENSHOT", "detail": "..." },
-    { "type": "CLICK", "detail": "CLICK(x,y) — element name" },
-    { "type": "TYPE", "detail": "TYPE(text)" },
-    { "type": "SCROLL", "detail": "SCROLL(down, 3)" },
-    { "type": "OBSERVE", "detail": "..." },
-    { "type": "FILTER", "detail": "..." },
-    { "type": "SORT", "detail": "..." },
-    { "type": "DONE", "detail": "task complete" }
+    { "type": "SCREENSHOT", "detail": "Capturing current view..." },
+    { "type": "OBSERVE", "detail": "Identifying key information on the page..." },
+    { "type": "CLICK", "detail": "Navigating to [Specific Site]..." },
+    { "type": "TYPE", "detail": "Searching for [Query]..." },
+    { "type": "DONE", "detail": "Information retrieved successfully." }
   ],
-  "spokenResponse": "Natural language response spoken to user",
-  "resultType": "products OR flights OR info OR links OR form OR general",
+  "spokenResponse": "A natural, helpful spoken summary of what you found.",
+  "resultType": "products | flights | hotels | jobs | info | links | news | general",
   "results": [
     {
-      "title": "Product/Result name",
-      "description": "Short description",
-      "price": "$XX (only for products)",
-      "rating": "4.7★ (only for products)",
-      "url": "https://real-working-url.com",
-      "urlLabel": "View on Amazon / Book Now / Open Link",
-      "badge": "Best Rated / Cheapest / Top Pick (optional)"
+      "title": "Exact Title of the Result",
+      "description": "A 2-3 sentence summary of the content or product. Mention if it is currently in stock or available.",
+      "price": "$XX.XX (if applicable)",
+      "rating": "X.X★ (if applicable)",
+      "url": "https://www.actual-website.com/path/to/page",
+      "urlLabel": "Open on [Website Name]",
+      "badge": "e.g., 'In Stock', 'Best Seller', 'Official Site', 'Latest News'"
     }
   ],
-  "simulatedUrl": "The URL the agent would navigate to e.g. amazon.com/s?k=...",
-  "taskSummary": "One line summary of what was accomplished"
+  "simulatedUrl": "The actual URL of the page you are 'viewing' or 'scraping' from.",
+  "taskSummary": "One sentence summary of the completed task."
 }
 
-IMPORTANT RULES:
-- Always include 3 to 5 real, working URLs in results
-- For product searches: use real Amazon, Flipkart, or relevant store URLs
-- For flight searches: use real Google Flights or MakeMyTrip URLs  
-- For hotel searches: use real Booking.com or Airbnb URLs
-- For job searches: use real LinkedIn or Indeed URLs
-- For general info: use real Wikipedia, official, or news URLs
-- For form filling: describe what fields would be filled
-- Make steps realistic and specific to the actual task
-- spokenResponse should sound natural and helpful
-- Always generate steps that match the actual task
-- URLs must be real clickable links, not made up
+BEHAVIOR:
+- Act like a real browser-based agent.
+- Use the Google Search tool to find REAL, LIVE data.
+- Do not provide results from your internal knowledge if they might be outdated (like prices or specific product availability).
+- Always be precise and professional.
 `;
 
 const LANGUAGES = [
@@ -192,55 +194,55 @@ export default function App() {
     setStepCount(0);
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: SYSTEM_PROMPT + "\n\nUser command: " + userCommand
-            }]
-          }],
-          generationConfig: {
-            responseMimeType: "application/json"
-          }
-        })
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{
+          role: "user",
+          parts: [{
+            text: SYSTEM_PROMPT + "\n\nUser command: " + userCommand
+          }]
+        }],
+        config: {
+          // Controlled generation (responseMimeType: "application/json") 
+          // is currently incompatible with the Search tool in some configurations.
+          // We rely on the prompt and manual parsing instead.
+          tools: [{ googleSearch: {} }]
+        }
       });
 
-      if (!response.ok) throw new Error('Gemini API Error — Check your API key');
+      const rawText = response.text;
+      if (!rawText) throw new Error('Gemini returned an empty response');
 
-      const data = await response.json();
-      const textResponse = data.candidates[0].content.parts[0].text;
-      
+      // Robust JSON extraction (handles markdown code blocks)
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      const jsonString = jsonMatch ? jsonMatch[0] : rawText;
+
       let parsed: GeminiResponse;
       try {
-        parsed = JSON.parse(textResponse);
+        parsed = JSON.parse(jsonString);
       } catch (e) {
-        // Fallback if JSON parse fails
-        parsed = {
-          agentThought: "I encountered an issue parsing the structured response, but I can still help you search.",
-          spokenResponse: "I'm sorry, I had trouble processing that request. Let me try a general search for you.",
-          steps: [{ type: 'SEARCH', detail: 'Performing general search...' }],
-          resultType: 'general',
-          results: [{
-            title: "Search Results",
-            description: `Searching for: ${userCommand}`,
-            url: `https://www.google.com/search?q=${encodeURIComponent(userCommand)}`,
-            urlLabel: "View on Google"
-          }],
-          simulatedUrl: `google.com/search?q=${encodeURIComponent(userCommand)}`,
-          taskSummary: "General search performed."
-        };
+        console.error("JSON Parse Error:", e, rawText);
+        throw new Error('Failed to parse agent response. Please try again.');
       }
 
       setGeminiData(parsed);
       setAgentStatus('EXECUTING');
       speak(parsed.spokenResponse);
       
+      // Add a navigation step to the action log
+      if (parsed.simulatedUrl) {
+        setActionLog(prev => [
+          ...prev,
+          { id: 'nav-' + Date.now(), type: 'NAVIGATE', detail: `Navigating to ${parsed.simulatedUrl}`, status: 'done' }
+        ]);
+      }
+
       // Animate action log
       animateSteps(parsed.steps);
 
     } catch (err: any) {
+      console.error("Gemini Call Error:", err);
       setError(err.message || 'API Connection Failed');
       setAgentStatus('IDLE');
       setTimeout(() => setError(null), 4000);
@@ -538,9 +540,9 @@ export default function App() {
                         <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/50" />
                       </div>
                       <div className="flex-1 bg-black/40 h-6 rounded-md border border-white/5 flex items-center px-3 gap-2">
-                        <Search className="w-3 h-3 text-white/20" />
-                        <span className="text-[10px] text-white/40">
-                          {agentStatus === 'IDLE' ? 'about:blank' : 'amazon.com/s?k=wireless+headphones'}
+                        <Globe className="w-3 h-3 text-white/20" />
+                        <span className="text-[10px] text-white/40 truncate">
+                          {geminiData?.simulatedUrl || (agentStatus === 'IDLE' ? 'about:blank' : 'Searching...')}
                         </span>
                       </div>
                     </div>
@@ -555,8 +557,16 @@ export default function App() {
 
                       {agentStatus === 'THINKING' && (
                         <div className="flex flex-col items-center gap-4">
-                          <Loader2 className="w-12 h-12 text-brand animate-spin" />
-                          <span className="text-xs font-bold text-brand animate-pulse">GEMINI IS ANALYZING...</span>
+                          <div className="relative">
+                            <Loader2 className="w-12 h-12 text-brand animate-spin" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <Globe className="w-5 h-5 text-brand/50 animate-pulse" />
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-xs font-bold text-brand animate-pulse">GEMINI IS ANALYZING...</span>
+                            <span className="text-[10px] text-white/30 tracking-widest uppercase">Using Google Search Grounding</span>
+                          </div>
                         </div>
                       )}
 
@@ -601,11 +611,37 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Voice Control Bar */}
+                  {/* Command & Voice Control Bar */}
                   <div className="flex flex-col items-center gap-6 py-8">
+                    {/* Command Input Bar */}
+                    <div className="w-full max-w-2xl bg-white/5 border border-white/10 rounded-2xl p-2 flex items-center gap-2 focus-within:border-brand/50 transition-all shadow-2xl">
+                      <div className="p-3 text-white/20">
+                        <Search className="w-5 h-5" />
+                      </div>
+                      <input 
+                        type="text"
+                        placeholder="Type any command... e.g. Find best-selling books on Amazon"
+                        value={currentCommand}
+                        onChange={(e) => setCurrentCommand(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && currentCommand.trim()) {
+                            handleGeminiCall(currentCommand);
+                          }
+                        }}
+                        className="flex-1 bg-transparent border-none focus:outline-none text-sm text-white/90 placeholder:text-white/20"
+                      />
+                      <button 
+                        onClick={() => currentCommand.trim() && handleGeminiCall(currentCommand)}
+                        disabled={agentStatus === 'THINKING' || agentStatus === 'EXECUTING'}
+                        className="bg-brand text-bg-dark px-6 py-2 rounded-xl font-bold text-xs hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100"
+                      >
+                        EXECUTE
+                      </button>
+                    </div>
+
                     {/* Live Transcript Display */}
                     <AnimatePresence>
-                      {(agentStatus === 'LISTENING' || currentCommand) && (
+                      {agentStatus === 'LISTENING' && (
                         <motion.div 
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
@@ -617,7 +653,7 @@ export default function App() {
                             <span className="text-[10px] font-bold text-brand tracking-widest uppercase">🎤 HEARING:</span>
                           </div>
                           <p className="text-sm italic text-white/70 leading-relaxed min-h-[1.5em]">
-                            {interimTranscript || currentCommand || "..."}
+                            {interimTranscript || "..."}
                           </p>
                         </motion.div>
                       )}
@@ -1060,15 +1096,18 @@ const ResultCard: React.FC<ResultCardProps> = ({ result, type }) => {
       case 'links': return '🔗';
       case 'info': return '📖';
       case 'form': return '📝';
+      case 'news': return '📰';
       default: return '🌐';
     }
   };
+
+  const formattedUrl = result.url.startsWith('http') ? result.url : `https://${result.url}`;
 
   return (
     <motion.div 
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="bg-[#0d1117] border border-brand/15 border-l-[3px] border-l-brand rounded-xl overflow-hidden flex flex-col h-full group"
+      className="bg-[#0d1117] border border-brand/15 border-l-[3px] border-l-brand rounded-xl overflow-hidden flex flex-col h-full group hover:border-brand/40 transition-all"
     >
       <div className="p-5 flex-1 space-y-3">
         <div className="flex justify-between items-start">
@@ -1081,7 +1120,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ result, type }) => {
             </span>
           )}
         </div>
-        <p className="text-xs text-white/50 leading-relaxed">{result.description}</p>
+        <p className="text-xs text-white/50 leading-relaxed line-clamp-3">{result.description}</p>
         {(result.price || result.rating) && (
           <div className="flex items-center gap-4 pt-1">
             {result.price && <span className="text-sm font-bold text-brand">{result.price}</span>}
@@ -1091,13 +1130,18 @@ const ResultCard: React.FC<ResultCardProps> = ({ result, type }) => {
       </div>
       <div className="p-4 pt-0">
         <a 
-          href={result.url} 
+          href={formattedUrl} 
           target="_blank" 
           rel="noreferrer"
+          onClick={() => {
+            // Log the navigation action
+            console.log(`Navigating to: ${formattedUrl}`);
+          }}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-brand/30 text-brand text-[11px] font-bold hover:bg-brand hover:text-bg-dark transition-all"
         >
           <span>{getIcon()}</span>
           {result.urlLabel}
+          <ExternalLink className="w-3 h-3 ml-1" />
         </a>
       </div>
     </motion.div>
