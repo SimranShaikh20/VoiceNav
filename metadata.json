@@ -1,6 +1,6 @@
 {
   "name": "VoiceNav — Universal Web Automation Agent",
-  "description": "An intelligent web automation agent that observes your screen visually and performs actions through voice or text commands.",
+  "description": "A next-generation UI Navigator that visually understands web interfaces and performs executable actions via voice and text commands, powered by Gemini 2.0 Flash.",
   "requestFramePermissions": [
     "microphone"
   ]
