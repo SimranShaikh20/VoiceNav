@@ -5,7 +5,7 @@
 
 ---
 
-## 🏆 Hackathon Alignment
+## 🏆 Alignment
 
 | Challenge Requirement | VoiceNav Implementation | Status |
 |---|---|---|
