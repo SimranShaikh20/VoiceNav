@@ -243,9 +243,38 @@ export default function App() {
 
     } catch (err: any) {
       console.error("Gemini Call Error:", err);
-      setError(err.message || 'API Connection Failed');
+      
+      let errorMessage = 'API Connection Failed';
+      let retryAfter = 0;
+
+      // Try to parse the error message if it's a JSON string (common with SDK)
+      try {
+        const errorData = JSON.parse(err.message.substring(err.message.indexOf('{')));
+        if (errorData.error) {
+          const details = errorData.error.details;
+          const retryInfo = details?.find((d: any) => d['@type']?.includes('RetryInfo'));
+          if (retryInfo?.retryDelay) {
+            retryAfter = parseInt(retryInfo.retryDelay);
+          }
+        }
+      } catch (e) {
+        // Not a JSON error or failed to parse
+      }
+      
+      // Handle Quota/Rate Limit Errors (429)
+      if (err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota')) {
+        errorMessage = `Gemini API Quota Exceeded. ${retryAfter > 0 ? `Please wait ${retryAfter}s.` : 'Please wait a moment.'} Check your plan at ai.google.dev.`;
+        setSpeakText(retryAfter > 0 ? `I've reached my limit. Please wait ${retryAfter} seconds.` : 'I have reached my API limit. Please wait a moment.');
+        speak(retryAfter > 0 ? `I've reached my limit. Please wait ${retryAfter} seconds.` : 'I have reached my API limit. Please wait a moment.');
+      } else if (err.message?.includes('API key not valid')) {
+        errorMessage = 'Invalid API Key. Please check your settings.';
+      } else {
+        errorMessage = err.message || 'An unexpected error occurred.';
+      }
+
+      setError(errorMessage);
       setAgentStatus('IDLE');
-      setTimeout(() => setError(null), 4000);
+      setTimeout(() => setError(null), 8000);
     }
   };
 
