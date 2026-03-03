@@ -1,12 +1,12 @@
 # ⚡ VoiceNav — Universal Web Automation Agent
 
-> **Gemini Live Agent Challenge Submission — UI Navigator Category**
+> **UI Navigator Category**
 > 
 > *"Your AI hands on the internet. Speak any task. Watch it happen."*
 
 ---
 
-## 🏆 Hackathon Alignment
+## 🏆 Alignment
 
 | Challenge Requirement | VoiceNav Implementation | Status |
 |---|---|---|
